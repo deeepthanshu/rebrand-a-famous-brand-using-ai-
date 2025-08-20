@@ -1,0 +1,498 @@
+
+import os, json, textwrap, zipfile, pathlib
+
+root = pathlib.Path("/mnt/data/brand-redesign")
+if root.exists():
+    # Clean up previous runs
+    import shutil
+    shutil.rmtree(root)
+root.mkdir(parents=True, exist_ok=True)
+
+def write(p: pathlib.Path, content: str):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
+
+# package.json
+write(root/"package.json", """
+{
+  "name": "brand-redesign",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "postinstall": "patch-package || echo 'skip patch-package'"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "firebase": "10.13.2",
+    "clsx": "2.1.1"
+  },
+  "devDependencies": {
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.41",
+    "tailwindcss": "3.4.10",
+    "typescript": "5.5.4",
+    "@types/react": "18.3.3",
+    "@types/node": "20.14.10",
+    "eslint": "9.9.0",
+    "eslint-config-next": "14.2.5"
+  }
+}
+""")
+
+# next.config.mjs
+write(root/"next.config.mjs", """
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '**' }
+    ]
+  }
+};
+export default nextConfig;
+""")
+
+# tsconfig.json
+write(root/"tsconfig.json", """
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      { "name": "next" }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+""")
+
+# postcss.config.mjs
+write(root/"postcss.config.mjs", """
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+""")
+
+# tailwind.config.ts
+write(root/"tailwind.config.ts", """
+import type { Config } from "tailwindcss";
+const config: Config = {
+  content: [
+    "./app/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}"
+  ],
+  theme: {
+    extend: {
+      colors: {
+        brand: {
+          primary: "#0A84FF",
+          secondary: "#24292F",
+          accent: "#FFB020",
+          muted: "#F5F7FB"
+        }
+      },
+      borderRadius: {
+        xl: "1rem",
+        "2xl": "1.5rem"
+      },
+      boxShadow: {
+        soft: "0 10px 25px rgba(0,0,0,0.07)"
+      }
+    },
+  },
+  plugins: [],
+};
+export default config;
+""")
+
+# styles
+write(root/"app/globals.css", """
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 1rem;
+}
+
+html, body {
+  @apply bg-white text-gray-900;
+}
+
+.container {
+  @apply mx-auto max-w-7xl px-4;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-2xl px-5 py-3 font-medium shadow-soft transition;
+}
+.btn-primary {
+  @apply bg-brand-primary text-white hover:opacity-90;
+}
+.btn-ghost {
+  @apply bg-transparent border border-gray-200 hover:bg-gray-50;
+}
+.card {
+  @apply rounded-2xl bg-white p-6 shadow-soft;
+}
+""")
+
+# env example
+write(root/".env.example", """
+# If using Firebase, copy these to .env.local
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+""")
+
+# lib/firebase.ts
+write(root/"lib/firebase.ts", """
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+export const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+""")
+
+# util: cn
+write(root/"lib/cn.ts", """
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: any[]) {
+  return twMerge(clsx(inputs));
+}
+""")
+
+# app/layout.tsx
+write(root/"app/layout.tsx", """
+import type { Metadata } from "next";
+import "./globals.css";
+import { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  title: "BrandName — Modern Experience",
+  description: "A clean, modern rebrand built with Next.js + Tailwind.",
+  openGraph: {
+    type: "website",
+    title: "BrandName — Modern Experience",
+    url: "https://example.com",
+    images: ["/og.jpg"]
+  }
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <a href="#content" className="sr-only focus:not-sr-only">Skip to content</a>
+        {children}
+      </body>
+    </html>
+  );
+}
+""")
+
+# components
+write(root/"components/Navbar.tsx", """
+"use client";
+import Link from "next/link";
+import { useState } from "react";
+
+export default function Navbar() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <header className="border-b border-gray-100 bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <div className="container flex h-16 items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 font-semibold">
+          <span className="inline-block h-8 w-8 rounded-2xl bg-brand-primary"></span>
+          BrandName
+        </Link>
+
+        <nav className="hidden items-center gap-6 md:flex">
+          <Link href="#features" className="hover:opacity-80">Features</Link>
+          <Link href="#testimonials" className="hover:opacity-80">Testimonials</Link>
+          <Link href="#contact" className="hover:opacity-80">Contact</Link>
+          <Link href="/blog" className="hover:opacity-80">Blog</Link>
+          <Link href="#" className="btn btn-primary">Get Started</Link>
+        </nav>
+
+        <button
+          aria-label="Open Menu"
+          className="md:hidden rounded-xl border p-2"
+          onClick={() => setOpen(!open)}
+        >
+          ☰
+        </button>
+      </div>
+
+      {open && (
+        <div className="md:hidden border-t bg-white">
+          <div className="container grid gap-4 py-4">
+            <Link href="#features" onClick={() => setOpen(false)}>Features</Link>
+            <Link href="#testimonials" onClick={() => setOpen(false)}>Testimonials</Link>
+            <Link href="#contact" onClick={() => setOpen(false)}>Contact</Link>
+            <Link href="/blog" onClick={() => setOpen(false)}>Blog</Link>
+            <Link href="#" className="btn btn-primary w-full text-center" onClick={() => setOpen(false)}>Get Started</Link>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
+""")
+
+write(root/"components/Hero.tsx", """
+import Image from "next/image";
+import Link from "next/link";
+
+export default function Hero() {
+  return (
+    <section className="container grid gap-8 py-16 md:grid-cols-2 md:py-24">
+      <div className="flex flex-col justify-center">
+        <p className="mb-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs">New — 2025 Rebrand</p>
+        <h1 className="text-4xl font-bold tracking-tight md:text-5xl">
+          A cleaner, faster <span className="text-brand-primary">BrandName</span> for everyone
+        </h1>
+        <p className="mt-4 text-lg text-gray-600">
+          Modern UI, accessible design, and mobile-first performance powered by Next.js + Tailwind.
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href="#features" className="btn btn-primary">Explore Features</Link>
+          <Link href="#contact" className="btn btn-ghost">Contact Sales</Link>
+        </div>
+      </div>
+      <div className="relative aspect-[4/3] overflow-hidden rounded-2xl shadow-soft md:aspect-[16/10]">
+        <Image src="https://images.unsplash.com/photo-1529336953121-ad5a0d43d0d2?q=80&w=1600&auto=format&fit=crop" alt="Hero" fill className="object-cover" priority />
+      </div>
+    </section>
+  );
+}
+""")
+
+write(root/"components/FeatureGrid.tsx", """
+type Feature = { title: string; desc: string; icon: string; };
+const FEATURES: Feature[] = [
+  { title: "Lightning fast", desc: "Optimized images and fonts, 90+ Lighthouse.", icon: "⚡" },
+  { title: "Accessible", desc: "Semantic HTML, focus states, and contrast.", icon: "♿" },
+  { title: "SEO-ready", desc: "Metadata, OpenGraph, and JSON-LD support.", icon: "🔍" },
+  { title: "CMS-powered", desc: "Use Firebase or Strapi to manage content.", icon: "🗄️" },
+  { title: "Responsive", desc: "Mobile-first layouts tuned for touch.", icon: "📱" },
+  { title: "Scalable", desc: "App Router, server components, and ISR.", icon: "🏗️" }
+];
+
+export default function FeatureGrid() {
+  return (
+    <section id="features" className="container py-16 md:py-20">
+      <h2 className="text-3xl font-semibold tracking-tight">Key Features</h2>
+      <p className="mt-2 text-gray-600">Everything you need to ship a modern rebrand.</p>
+      <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {FEATURES.map((f) => (
+          <div key={f.title} className="card">
+            <div className="mb-3 text-2xl">{f.icon}</div>
+            <h3 className="text-xl font-semibold">{f.title}</h3>
+            <p className="mt-2 text-gray-600">{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+""")
+
+write(root/"components/Testimonials.tsx", """
+const TESTIMONIALS = [
+  { name: "Alex P.", role: "Product Lead", quote: "Navigation is simpler and conversions are up 18%." },
+  { name: "Maya G.", role: "CMO", quote: "The new branding feels premium without losing familiarity." }
+];
+
+export default function Testimonials() {
+  return (
+    <section id="testimonials" className="bg-brand-muted py-16 md:py-20">
+      <div className="container">
+        <h2 className="text-3xl font-semibold tracking-tight">What people say</h2>
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          {TESTIMONIALS.map(t => (
+            <blockquote key={t.name} className="card">
+              <p className="text-lg">“{t.quote}”</p>
+              <footer className="mt-4 text-sm text-gray-600">— {t.name}, {t.role}</footer>
+            </blockquote>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+""")
+
+write(root/"components/CTASection.tsx", """
+import Link from "next/link";
+
+export default function CTASection() {
+  return (
+    <section id="contact" className="container py-16 md:py-20">
+      <div className="card flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h3 className="text-2xl font-semibold">Ready to modernize your brand?</h3>
+          <p className="mt-1 text-gray-600">Let’s build a faster, cleaner experience together.</p>
+        </div>
+        <Link href="#" className="btn btn-primary">Get a Demo</Link>
+      </div>
+    </section>
+  );
+}
+""")
+
+write(root/"components/Footer.tsx", """
+import Link from "next/link";
+
+export default function Footer() {
+  return (
+    <footer className="border-t py-10">
+      <div className="container flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <p className="text-sm text-gray-600">&copy; {new Date().getFullYear()} BrandName. All rights reserved.</p>
+        <nav className="flex gap-5 text-sm">
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/sitemap.xml">Sitemap</Link>
+        </nav>
+      </div>
+    </footer>
+  );
+}
+""")
+
+# app/page.tsx
+write(root/"app/page.tsx", """
+import Navbar from "@/components/Navbar";
+import Hero from "@/components/Hero";
+import FeatureGrid from "@/components/FeatureGrid";
+import Testimonials from "@/components/Testimonials";
+import CTASection from "@/components/CTASection";
+import Footer from "@/components/Footer";
+
+export default function HomePage() {
+  return (
+    <div id="content">
+      <Navbar />
+      <Hero />
+      <FeatureGrid />
+      <Testimonials />
+      <CTASection />
+      <Footer />
+    </div>
+  );
+}
+""")
+
+# blog route (placeholder)
+write(root/"app/blog/page.tsx", """
+export const metadata = {
+  title: "Blog — BrandName"
+};
+
+export default function BlogPage() {
+  return (
+    <main className="container py-16">
+      <h1 className="text-3xl font-semibold">Blog</h1>
+      <p className="mt-2 text-gray-600">Connect a CMS (Firebase/Strapi) and render posts here.</p>
+    </main>
+  );
+}
+""")
+
+# privacy and terms
+write(root/"app/privacy/page.tsx", """
+export default function Privacy() {
+  return (
+    <main className="container py-16">
+      <h1 className="text-3xl font-semibold">Privacy Policy</h1>
+      <p className="mt-2 text-gray-600">Add your privacy content here.</p>
+    </main>
+  );
+}
+""")
+
+write(root/"app/terms/page.tsx", """
+export default function Terms() {
+  return (
+    <main className="container py-16">
+      <h1 className="text-3xl font-semibold">Terms & Conditions</h1>
+      <p className="mt-2 text-gray-600">Add your terms here.</p>
+    </main>
+  );
+}
+""")
+
+# public files
+write(root/"public/robots.txt", """
+User-agent: *
+Allow: /
+Sitemap: https://example.com/sitemap.xml
+""")
+
+write(root/"public/og.jpg", "")  # placeholder (empty)
+
+# sitemap (static example)
+write(root/"app/sitemap.ts", """
+import { MetadataRoute } from "next";
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  return [
+    { url: "https://example.com/", changeFrequency: "weekly", priority: 1 },
+    { url: "https://example.com/blog", changeFrequency: "weekly", priority: 0.7 },
+    { url: "https://example.com/privacy", changeFrequency: "yearly", priority: 0.3 },
+    { url: "https://example.com/terms", changeFrequency: "yearly", priority: 0.3 },
+  ];
+}
+""")
+
+# README
+write(root/"README.md", """
+# Brand Redesign Starter (Next.js + Tailwind + (optional) Firebase)
+
+A clean, mobile-first scaffold for your rebrand task.
+
+## Quick start
+```bash
+pnpm i   # or npm i / yarn
+pnpm dev
